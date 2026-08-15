@@ -1,0 +1,46 @@
+name: Daily Last.fm Ingestion
+
+# Last.fm retains full scrobble history server-side, so this isn't racing
+# data loss the way the original Spotify design was. It runs daily anyway
+# to (a) build point-in-time top-items snapshots for trend analysis, and
+# (b) actually be a running pipeline rather than a script you remember to
+# run manually -- which is the whole point of the project.
+on:
+  schedule:
+    - cron: "0 18 * * *"  # 18:00 UTC = 11:30 PM IST, once a day
+  workflow_dispatch: {}     # lets you trigger a manual run from the Actions tab
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Fetch Last.fm data
+        env:
+          LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
+          LASTFM_USERNAME: ${{ secrets.LASTFM_USERNAME }}
+        run: python ingestion/fetch_lastfm.py
+
+      - name: Load into warehouse
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python load/load_to_db.py
+
+      - name: Commit raw + processed data back to repo
+        # Only sensible if you're using local SQLite committed to the repo.
+        # If DATABASE_URL points at real Postgres (Supabase/Neon), delete
+        # this step -- the DB already persisted the data itself.
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/raw/*.json data/processed/*.db 2>/dev/null || true
+          git diff --staged --quiet || git commit -m "Daily ingestion: $(date -u +%Y-%m-%d)"
+          git push

@@ -1,0 +1,11 @@
+.env
+.spotify_token_cache
+__pycache__/
+*.pyc
+.venv/
+venv/
+data/raw/*.json
+data/processed/*.db
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+.streamlit/secrets.toml
